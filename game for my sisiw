@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Fixed viewport settings to prevent accidental zooming/panning on mobile -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Catch My Heart! 🩵</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to bottom, #e0f2fe, #bae6fd);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            touch-action: none; /* Prevents mobile double-tap zoom and scrolling */
+        }
+
+        #game-container {
+            position: relative;
+            width: 400px;
+            height: 600px;
+            background: #f0f9ff;
+            border: 4px solid #38bdf8;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+            /* Scale container down smoothly on smaller screens */
+            max-width: 95vw;
+            max-height: 85vh;
+            aspect-ratio: 400 / 600;
+        }
+
+        #basket {
+            position: absolute;
+            bottom: 20px;
+            left: 170px;
+            width: 60px;
+            height: 40px;
+            background-color: #38bdf8;
+            border-radius: 0 0 15px 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            touch-action: none; /* Crucial for touch dragging */
+        }
+
+        #basket::after {
+            content: '🧺'; 
+            position: absolute;
+            top: -10px;
+        }
+
+        .falling-item {
+            position: absolute;
+            font-size: 30px;
+            user-select: none;
+            pointer-events: none; /* Keeps items from interfering with drag touches */
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 16px;
+            font-weight: bold;
+            color: #0369a1;
+            z-index: 5;
+        }
+
+        #screen-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(240, 249, 255, 0.96);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+
+        h1 { color: #0369a1; margin-bottom: 10px; font-size: 24px; }
+        p { color: #475569; font-size: 14px; margin-bottom: 20px; line-height: 1.4; }
+
+        button {
+            background: #38bdf8;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+            box-shadow: 0 4px 10px rgba(56, 189, 248, 0.4);
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        button:hover {
+            background: #0ea5e9;
+            transform: scale(1.05);
+        }
+
+        #instruction-tip {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #0369a1;
+            font-weight: bold;
+            opacity: 0.8;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        #victory-sparkles {
+            font-size: 40px;
+            margin-top: 15px;
+            animation: bounce 1s infinite alternate;
+        }
+
+        @keyframes bounce {
+            from { transform: translateY(0); }
+            to { transform: translateY(-10px); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="ui-layer">
+            <div id="score-board">Hearts: 0 / 143</div>
+            <div id="lives-board">Lives: 💙💙💙</div>
+        </div>
+
+        <div id="basket"></div>
+
+        <div id="screen-overlay">
+            <h1 id="title-text">HARD MODE: Catch My Love! 🩵</h1>
+            <p id="body-text">WARNING: It drops FAST. Catch 143 hearts to win. Avoid 🍑, 🫒, and 🐍. Keep all 3 lives for the ultimate grand prize!</p>
+            <button id="action-btn" onclick="startGame()">Start Game</button>
+            <div id="victory-sparkles" style="display:none;">✨🩵🎉</div>
+        </div>
+    </div>
+
+    <div id="instruction-tip">👋 Swipe anywhere inside the box to move!</div>
+
+<script>
+    const container = document.getElementById('game-container');
+    const basket = document.getElementById('basket');
+    const scoreBoard = document.getElementById('score-board');
+    const livesBoard = document.getElementById('lives-board');
+    const overlay = document.getElementById('screen-overlay');
+    const titleText = document.getElementById('title-text');
+    const bodyText = document.getElementById('body-text');
+    const actionBtn = document.getElementById('action-btn');
+    const sparkles = document.getElementById('victory-sparkles');
+
+    let score = 0;
+    let lives = 3;
+    let gameActive = false;
+    let basketX = 170;
+    const containerWidth = 400;
+    const basketWidth = 60;
+    let gameLoopInterval;
+    let spawnInterval;
+    let fallingItems = [];
+    
+    let baseSpeed = 5.5; 
+    let spawnRate = 450; 
+    const targetScore = 143;
+    const insideJokes = ["🍑", "🫒", "🐍"];
+
+    // Mobile swipe tracking states
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartBasketX = 0;
+
+    // Direct Finger Slide / Drag Physics
+    container.addEventListener('touchstart', (e) => {
+        if (!gameActive) return;
+        isDragging = true;
+        
+        const rect = container.getBoundingClientRect();
+        const clientX = e.touches[0].clientX;
+        dragStartX = ((clientX - rect.left) / rect.width) * containerWidth;
+        dragStartBasketX = basketX;
+    });
+
+    container.addEventListener('touchmove', (e) => {
+        if (!gameActive || !isDragging) return;
+        
+        const rect = container.getBoundingClientRect();
+        const clientX = e.touches[0].clientX;
+        const currentX = ((clientX - rect.left) / rect.width) * containerWidth;
+        const diffX = currentX - dragStartX;
+        
+        basketX = dragStartBasketX + diffX;
+        
+        if (basketX < 0) basketX = 0;
+        if (basketX > containerWidth - basketWidth) basketX = containerWidth - basketWidth;
+        
+        basket.style.left = basketX + 'px';
+    });
+
+    container.addEventListener('touchend', () => isDragging = false);
+
+    document.addEventListener('keydown', (e) => {
+        if (!gameActive) return;
+        if (e.key === 'ArrowLeft' && basketX > 0) basketX -= 25;
+        if (e.key === 'ArrowRight' && basketX < (containerWidth - basketWidth)) basketX += 25;
+        if (basketX < 0) basketX = 0;
+        if (basketX > containerWidth - basketWidth) basketX = containerWidth - basketWidth;
+        basket.style.left = basketX + 'px';
+    });
+
+    function startGame() {
+        score = 0;
+        lives = 3;
+        fallingItems.forEach(item => item.element.remove());
+        fallingItems = [];
+        basketX = 170;
+        basket.style.left = basketX + 'px';
+        scoreBoard.innerText = `Hearts: ${score} / ${targetScore}`;
+        livesBoard.innerText = "Lives: 💙💙💙";
+        sparkles.style.display = "none";
+        
+        overlay.style.display = 'none';
+        gameActive = true;
+
+        gameLoopInterval = setInterval(updateGame, 1000 / 60);
+        resetSpawnTimer();
+    }
+
+    function resetSpawnTimer() {
+        clearInterval(spawnInterval);
+        let currentSpawnRate = Math.max(250, spawnRate - (score * 1.5)); 
+        spawnInterval = setInterval(spawnItem, currentSpawnRate);
+    }
+
+    function spawnItem() {
+        if (!gameActive) return;
+
+        const item = document.createElement('div');
+        item.classList.add('falling-item');
+        
+        const isHeart = Math.random() > 0.40; 
+        if (isHeart) {
+            item.innerText = '🩵';
+            item.dataset.type = 'heart';
+        } else {
+            item.innerText = insideJokes[Math.floor(Math.random() * insideJokes.length)];
+            item.dataset.type = 'bad';
+        }
+
+        item.style.top = '-40px';
+        item.style.left = Math.random() * (containerWidth - 30) + 'px';
+        container.appendChild(item);
+
+        fallingItems.push({
+            element: item,
+            y: -40,
+            x: parseFloat(item.style.left),
+            type: item.dataset.type
+        });
+    }
+
+    function updateGame() {
+        let currentSpeed = baseSpeed + (score * 0.03); 
+
+        for (let i = fallingItems.length - 1; i >= 0; i--) {
+            let item = fallingItems[i];
+            item.y += currentSpeed;
+            item.element.style.top = item.y + 'px';
+
+            if (item.y >= 520 && item.y <= 555) {
+                if (item.x + 25 >= basketX && item.x <= basketX + basketWidth) {
+                    if (item.type === 'heart') {
+                        score++;
+                        scoreBoard.innerText = `Hearts: ${score} / ${targetScore}`;
+                        if (score % 10 === 0) resetSpawnTimer(); 
+                        if (score >= targetScore) {
+                            endGame(true);
+                        }
+                    } else {
+                        lives--;
+                        updateLivesUI();
+                        if (lives <= 0) {
+                            endGame(false);
+                        }
+                    }
+                    item.element.remove();
+                    fallingItems.splice(i, 1);
+                    continue;
+                }
+            }
+
+            if (item.y > 600) {
+                item.element.remove();
+                fallingItems.splice(i, 1);
+            }
+        }
+    }
+
+    function updateLivesUI() {
+        let heartsStr = "";
+        for(let i=0; i<lives; i++) heartsStr += "💙";
+        livesBoard.innerText = "Lives: " + heartsStr;
+    }
+
+    function endGame(isVictory) {
+        gameActive = false;
+        isDragging = false;
+        clearInterval(gameLoopInterval);
+        clearInterval(spawnInterval);
+
+        overlay.style.display = 'flex';
+
+        if (isVictory) {
+            sparkles.style.display = "block";
+            actionBtn.innerText = "Play Again 🩵";
+            
+            if (lives === 3) {
+                titleText.innerText = "PERFECT SCORE! 🏆🎉";
+                bodyText.innerText = "Wow! You actually dodged all the peaches, olives, and snakes to get 143 hearts! Your prize is 1k PESO and a Dinner date in YABU! 🍜❤️ I love you so much!";
+            } else {
+                titleText.innerText = "You Won My Heart! 🩵";
+                bodyText.innerText = "You survived the chaos and hit 143 hearts! Your prize is a 500 peso shopping spree in TikTok! 🛍️✨ But hey... if you manage a perfect run with all 3 💙 left, a bigger prize awaits!";
+            }
+        } else {
+            titleText.innerText = "Game Over! 😭";
+            bodyText.innerText = "It's tough, right? Those traps drop fast! Don't give up, try again to win your prize.";
+            actionBtn.innerText = "Try Again";
+        }
+    }
+</script>
+</body>
+</html>
